@@ -353,13 +353,25 @@ if (property.featured_image) {
   allImages.push(property.featured_image);
 }
 
-// Then add all other images (excluding duplicates if featured image is also in images array)
-if (property.images && property.images.length > 0) {
-  // Filter out any image that might be the same as featured_image
-  const otherImages = property.images
-    .filter(img => !img.is_featured) // Only get non-featured images
-    .map(img => img.image);
-  allImages.push(...otherImages);
+// Safely handle images - check if it's an array first
+if (property.images) {
+  // Check if images is an array
+  if (Array.isArray(property.images)) {
+    // Filter out any image that might be the same as featured_image
+    const otherImages = property.images
+      .filter(img => img && !img.is_featured) // Also check if img exists
+      .map(img => img.image)
+      .filter(url => url); // Remove any empty URLs
+    allImages.push(...otherImages);
+  } 
+  // If it's an object with IDs as keys (sometimes API returns this format)
+  else if (typeof property.images === 'object') {
+    const otherImages = Object.values(property.images)
+      .filter((img: any) => img && !img.is_featured)
+      .map((img: any) => img.image)
+      .filter(url => url);
+    allImages.push(...otherImages);
+  }
 }
 
 // If still no images, use fallback
@@ -516,33 +528,40 @@ if (allImages.length === 0) {
                 <p className="text-gray-600">{property.description}</p>
               </div>
 
-              {/* Amenities */}
-              <div className="mb-6">
-                <h2 className="text-xl font-bold mb-3">What this place offers</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  {property.amenities && Object.entries(property.amenities).filter(([_, v]) => v).map(([key, _]) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <span>✓</span>
-                      <span className="capitalize">{key.replace('_', ' ')}</span>
-                    </div>
-                  ))}
-                </div>
+             {/* Amenities */}
+            <div className="mb-6">
+              <h2 className="text-xl font-bold mb-3">What this place offers</h2>
+              <div className="grid grid-cols-2 gap-4">
+                {property.amenities && typeof property.amenities === 'object' 
+                  ? Object.entries(property.amenities)
+                      .filter(([_, v]) => v)
+                      .map(([key, _]) => (
+                        <div key={key} className="flex items-center gap-2">
+                          <span>✓</span>
+                          <span className="capitalize">{key.replace('_', ' ')}</span>
+                        </div>
+                      ))
+                  : null}
               </div>
+            </div>
 
               {/* Family Features */}
-              {property.family_features && Object.keys(property.family_features).length > 0 && (
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold mb-3">Family-friendly features</h2>
-                  <div className="grid grid-cols-2 gap-4">
-                    {Object.entries(property.family_features).filter(([_, v]) => v).map(([key, _]) => (
+            {property.family_features && typeof property.family_features === 'object' && 
+            Object.keys(property.family_features).length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-xl font-bold mb-3">Family-friendly features</h2>
+                <div className="grid grid-cols-2 gap-4">
+                  {Object.entries(property.family_features)
+                    .filter(([_, v]) => v)
+                    .map(([key, _]) => (
                       <div key={key} className="flex items-center gap-2">
                         <span>👨‍👩‍👧‍👦</span>
                         <span className="capitalize">{key.replace('_', ' ')}</span>
                       </div>
                     ))}
-                  </div>
                 </div>
-              )}
+              </div>
+            )}
 
               {/* Reviews Section */}
               <div>
