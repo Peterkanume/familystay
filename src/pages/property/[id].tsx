@@ -17,14 +17,14 @@ interface Property {
   bathrooms: number;
   max_guests: number;
   square_feet: number;
-  amenities: Record<string, boolean>;
-  family_features: Record<string, boolean>;
+  amenities: Record<string, boolean> | string | any;
+  family_features: Record<string, boolean> | string | any;
   base_price: number;
   cleaning_fee: number;
   service_fee: number;
   security_deposit: number;
   featured_image: string;
-  images: { id: number; image: string; is_featured: boolean }[];
+  images: { id: number; image: string; is_featured: boolean }[] | Record<string, any> | any;
   host: {
     id: number;
     name: string;
@@ -45,7 +45,7 @@ interface User {
   phone_number?: string;
   phone?: string;
   profile_picture?: string;
-  [key: string]: any; // Allow additional properties
+  [key: string]: any;
 }
 
 interface AvailabilityDate {
@@ -53,6 +53,58 @@ interface AvailabilityDate {
   is_available: boolean;
   price_override: number | null;
   is_booked: boolean;
+}
+
+// Helper: safely parse a field that might be a JSON string or already an object
+function safeParse(value: any): any {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  }
+  return value;
+}
+
+// Helper: safely get entries from an object-like field (handles string JSON, arrays, objects)
+function safeObjectEntries(value: any): [string, any][] {
+  const parsed = safeParse(value);
+  if (!parsed) return [];
+  if (Array.isArray(parsed)) return [];
+  if (typeof parsed !== 'object') return [];
+  return Object.entries(parsed);
+}
+
+// Helper: safely get image URLs from images field
+function safeImageUrls(images: any, featuredImage?: string): string[] {
+  const result: string[] = [];
+
+  // Add featured image first
+  if (featuredImage) {
+    result.push(featuredImage);
+  }
+
+  if (!images) return result;
+
+  const parsed = safeParse(images);
+
+  if (Array.isArray(parsed)) {
+    const others = parsed
+      .filter((img: any) => img && !img.is_featured)
+      .map((img: any) => img.image || img)
+      .filter((url: any) => typeof url === 'string' && url);
+    result.push(...others);
+  } else if (typeof parsed === 'object') {
+    const others = Object.values(parsed)
+      .filter((img: any) => img && !img.is_featured)
+      .map((img: any) => img.image || img)
+      .filter((url: any) => typeof url === 'string' && url);
+    result.push(...others);
+  }
+
+  return result;
 }
 
 export default function PropertyDetail() {
@@ -80,37 +132,40 @@ export default function PropertyDetail() {
     if (token) {
       setIsLoggedIn(true);
     }
-    
+
     if (id) {
       fetchProperty();
       fetchAvailability();
     }
   }, [id]);
 
- const fetchProperty = async () => {
-  setLoading(true);
-  try {
-    const response = await propertiesApi.get(Number(id));
-    console.log('🔍 FULL API RESPONSE:', response);
-    console.log('🔍 RESPONSE DATA:', response.data);
-    console.log('🔍 DATA TYPE:', typeof response.data);
-    console.log('🔍 IS ARRAY?', Array.isArray(response.data));
-    console.log('🔍 KEYS:', Object.keys(response.data));
-    
-    // Specifically check images
-    console.log('🔍 IMAGES FIELD:', response.data.images);
-    console.log('🔍 IMAGES TYPE:', typeof response.data.images);
-    console.log('🔍 IMAGES IS ARRAY?', Array.isArray(response.data.images));
-    
-    setProperty(response.data);
-  } catch (error) {
-    console.error('Error fetching property:', error);
-    toast.error('Property not found');
-    router.push('/search');
-  } finally {
-    setLoading(false);
-  }
-};
+  const fetchProperty = async () => {
+    setLoading(true);
+    try {
+      const response = await propertiesApi.get(Number(id));
+      console.log('🔍 FULL API RESPONSE:', response);
+      console.log('🔍 RESPONSE DATA:', response.data);
+      console.log('🔍 DATA TYPE:', typeof response.data);
+      console.log('🔍 IS ARRAY?', Array.isArray(response.data));
+      console.log('🔍 KEYS:', Object.keys(response.data));
+
+      // Debug images and amenities shapes
+      console.log('🔍 IMAGES FIELD:', response.data.images);
+      console.log('🔍 IMAGES TYPE:', typeof response.data.images);
+      console.log('🔍 IMAGES IS ARRAY?', Array.isArray(response.data.images));
+      console.log('🔍 AMENITIES TYPE:', typeof response.data.amenities, response.data.amenities);
+      console.log('🔍 FAMILY_FEATURES TYPE:', typeof response.data.family_features, response.data.family_features);
+
+      setProperty(response.data);
+    } catch (error) {
+      console.error('Error fetching property:', error);
+      toast.error('Property not found');
+      router.push('/search');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchAvailability = async () => {
     try {
       const startDate = new Date().toISOString().split('T')[0];
@@ -131,7 +186,7 @@ export default function PropertyDetail() {
   };
 
   const isDateUnavailable = (dateStr: string) => {
-    const dateAvail = availability.find(a => a.date === dateStr);
+    const dateAvail = availability.find((a) => a.date === dateStr);
     return dateAvail && (!dateAvail.is_available || dateAvail.is_booked);
   };
 
@@ -140,19 +195,17 @@ export default function PropertyDetail() {
       setBookingDates({ ...bookingDates, [type]: value });
       return;
     }
-    
-    // Check if selected date is unavailable
+
     if (isDateUnavailable(value)) {
       toast.error('This date is not available. Please select different dates.');
       return;
     }
-    
-    // For check-out, also check if any date between check-in and check-out is unavailable
+
     if (type === 'checkOut' && bookingDates.checkIn) {
       const checkIn = new Date(bookingDates.checkIn);
       const checkOut = new Date(value);
       let hasUnavailable = false;
-      
+
       const current = new Date(checkIn);
       current.setDate(current.getDate() + 1);
       while (current <= checkOut) {
@@ -163,147 +216,139 @@ export default function PropertyDetail() {
         }
         current.setDate(current.getDate() + 1);
       }
-      
+
       if (hasUnavailable) {
         toast.error('Some dates in your range are not available. Please select different dates.');
         return;
       }
     }
-    
+
     setBookingDates({ ...bookingDates, [type]: value });
   };
 
-const handleReserve = async () => {
-  if (!property) {
-    toast.error('Property information not available');
-    return;
-  }
-  
-  if (!isLoggedIn) {
-    router.push('/auth/login?redirect=' + router.asPath);
-    return;
-  }
-
-  if (!bookingDates.checkIn || !bookingDates.checkOut) {
-    toast.error('Please select check-in and check-out dates');
-    return;
-  }
-
-  // Validate that check-out is after check-in
-  if (new Date(bookingDates.checkOut) <= new Date(bookingDates.checkIn)) {
-    toast.error('Check-out date must be after check-in date');
-    return;
-  }
-
-  setBookingLoading(true);
-  try {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      toast.error('Please log in again');
-      router.push('/auth/login');
+  const handleReserve = async () => {
+    if (!property) {
+      toast.error('Property information not available');
       return;
     }
 
-    const userData = localStorage.getItem('user');
-    console.log('User data from localStorage:', userData);
-    
-   let user: User = {};
-try {
-  user = userData ? JSON.parse(userData) : {};
-} catch (e) {
-  console.error('Error parsing user data:', e);
-}
-
-    // Calculate total nights and amount
-    const checkIn = new Date(bookingDates.checkIn);
-    const checkOut = new Date(bookingDates.checkOut);
-    const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
-    
-    const subtotal = Number(property.base_price) * nights;
-    const cleaningFee = Number(property.cleaning_fee) || 0;
-    const serviceFee = Number(property.service_fee) || 0;
-    const taxAmount = (subtotal + cleaningFee + serviceFee) * 0.16;
-    const total = subtotal + cleaningFee + serviceFee + taxAmount;
-
-    // Format guest name properly
-    let guestFullName = 'Guest';
-    if (user.first_name || user.last_name) {
-      guestFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
-    } else if (user.full_name) {
-      guestFullName = user.full_name;
-    } else if (user.username) {
-      guestFullName = user.username;
-    } else if (user.email) {
-      guestFullName = user.email.split('@')[0];
-    }
-
-    // Get phone number or use placeholder
-    let guestPhone = user.phone_number || user.phone || '';
-    if (!guestPhone) {
-      // If no phone number, you might want to prompt user to add it
-      // For now, we'll use a placeholder but ideally you should collect it
-      toast.error('Please add your phone number to your profile');
-      setBookingLoading(false);
+    if (!isLoggedIn) {
+      router.push('/auth/login?redirect=' + router.asPath);
       return;
     }
 
-    // Prepare booking data exactly as backend expects
-    const bookingData = {
-      property_id: parseInt(id as string),
-      check_in_date: bookingDates.checkIn,
-      check_out_date: bookingDates.checkOut,
-      number_of_guests: bookingDates.guests,
-      number_of_children: 0,
-      total_amount: total,
-      guest_full_name: guestFullName,
-      guest_email: user.email || '',
-      guest_phone: guestPhone,
-      special_requests: '',
-    };
+    if (!bookingDates.checkIn || !bookingDates.checkOut) {
+      toast.error('Please select check-in and check-out dates');
+      return;
+    }
 
-    console.log('Sending booking data:', bookingData);
-    
-    const response = await axios.post(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/bookings/create/`,
-      bookingData,
-      {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
+    if (new Date(bookingDates.checkOut) <= new Date(bookingDates.checkIn)) {
+      toast.error('Check-out date must be after check-in date');
+      return;
+    }
+
+    setBookingLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        toast.error('Please log in again');
+        router.push('/auth/login');
+        return;
       }
-    );
 
-    console.log('Booking response:', response);
-    toast.success('Booking created successfully!');
-    router.push('/bookings');
-  } catch (error: any) {
-    console.error('Booking error:', error);
-    
-    if (error.response?.data) {
-      const errorData = error.response.data;
-      console.error('Error details:', errorData);
-      
-      if (typeof errorData === 'string') {
-        toast.error(errorData);
-      } else if (errorData.detail) {
-        toast.error(errorData.detail);
-      } else if (errorData.message) {
-        toast.error(errorData.message);
+      const userData = localStorage.getItem('user');
+      console.log('User data from localStorage:', userData);
+
+      let user: User = {};
+      try {
+        user = userData ? JSON.parse(userData) : {};
+      } catch (e) {
+        console.error('Error parsing user data:', e);
+      }
+
+      const checkIn = new Date(bookingDates.checkIn);
+      const checkOut = new Date(bookingDates.checkOut);
+      const nights = Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24));
+
+      const subtotal = Number(property.base_price) * nights;
+      const cleaningFee = Number(property.cleaning_fee) || 0;
+      const serviceFee = Number(property.service_fee) || 0;
+      const taxAmount = (subtotal + cleaningFee + serviceFee) * 0.16;
+      const total = subtotal + cleaningFee + serviceFee + taxAmount;
+
+      let guestFullName = 'Guest';
+      if (user.first_name || user.last_name) {
+        guestFullName = `${user.first_name || ''} ${user.last_name || ''}`.trim();
+      } else if (user.full_name) {
+        guestFullName = user.full_name;
+      } else if (user.username) {
+        guestFullName = user.username;
+      } else if (user.email) {
+        guestFullName = user.email.split('@')[0];
+      }
+
+      let guestPhone = user.phone_number || user.phone || '';
+      if (!guestPhone) {
+        toast.error('Please add your phone number to your profile');
+        setBookingLoading(false);
+        return;
+      }
+
+      const bookingData = {
+        property_id: parseInt(id as string),
+        check_in_date: bookingDates.checkIn,
+        check_out_date: bookingDates.checkOut,
+        number_of_guests: bookingDates.guests,
+        number_of_children: 0,
+        total_amount: total,
+        guest_full_name: guestFullName,
+        guest_email: user.email || '',
+        guest_phone: guestPhone,
+        special_requests: '',
+      };
+
+      console.log('Sending booking data:', bookingData);
+
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/bookings/create/`,
+        bookingData,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      console.log('Booking response:', response);
+      toast.success('Booking created successfully!');
+      router.push('/bookings');
+    } catch (error: any) {
+      console.error('Booking error:', error);
+
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        console.error('Error details:', errorData);
+
+        if (typeof errorData === 'string') {
+          toast.error(errorData);
+        } else if (errorData.detail) {
+          toast.error(errorData.detail);
+        } else if (errorData.message) {
+          toast.error(errorData.message);
+        } else {
+          const errorMessages = Object.entries(errorData)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(', ');
+          toast.error(errorMessages || 'Failed to create booking');
+        }
       } else {
-        // Show validation errors
-        const errorMessages = Object.entries(errorData)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(', ');
-        toast.error(errorMessages || 'Failed to create booking');
+        toast.error('Failed to create booking. Please try again.');
       }
-    } else {
-      toast.error('Failed to create booking. Please try again.');
+    } finally {
+      setBookingLoading(false);
     }
-  } finally {
-    setBookingLoading(false);
-  }
-};
+  };
 
   const handleSendMessage = async () => {
     if (!message.trim()) {
@@ -313,17 +358,15 @@ try {
 
     setSendingMessage(true);
     try {
-      // Create conversation with host (include host ID in participants)
       const conversation = await communicationsApi.createConversation({
         property_id: id,
         participants: [property?.host?.id],
       });
-      
-      // Send the first message in the conversation
+
       if (conversation.data?.id) {
         await communicationsApi.sendMessage(conversation.data.id, message);
       }
-      
+
       toast.success('Message sent to host!');
       setShowContactModal(false);
       setMessage('');
@@ -349,58 +392,42 @@ try {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-2xl font-bold mb-4">Property not found</h2>
-          <Link href="/search" className="btn-primary">Browse Properties</Link>
+          <Link href="/search" className="btn-primary">
+            Browse Properties
+          </Link>
         </div>
       </div>
     );
   }
 
-  // Update the allImages array to prioritize featured_image
-const allImages = [];
-
-// First add the featured image if it exists
-if (property.featured_image) {
-  allImages.push(property.featured_image);
-}
-
-// Safely handle images - check if it's an array first
-if (property.images) {
-  // Check if images is an array
-  if (Array.isArray(property.images)) {
-    // Filter out any image that might be the same as featured_image
-    const otherImages = property.images
-      .filter(img => img && !img.is_featured) // Also check if img exists
-      .map(img => img.image)
-      .filter(url => url); // Remove any empty URLs
-    allImages.push(...otherImages);
-  } 
-  // If it's an object with IDs as keys (sometimes API returns this format)
-  else if (typeof property.images === 'object') {
-    const otherImages = Object.values(property.images)
-      .filter((img: any) => img && !img.is_featured)
-      .map((img: any) => img.image)
-      .filter(url => url);
-    allImages.push(...otherImages);
+  // Build image array safely using helpers
+  const allImages = safeImageUrls(property.images, property.featured_image);
+  if (allImages.length === 0) {
+    allImages.push('https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800');
   }
-}
 
-// If still no images, use fallback
-if (allImages.length === 0) {
-  allImages.push('https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800');
-}
+  // Safely parse amenities and family_features (handles JSON string, object, or bad data)
+  const amenityEntries = safeObjectEntries(property.amenities).filter(([_, v]) => v);
+  const familyEntries = safeObjectEntries(property.family_features).filter(([_, v]) => v);
 
-  const totalNights = bookingDates.checkIn && bookingDates.checkOut 
-    ? Math.ceil((new Date(bookingDates.checkOut).getTime() - new Date(bookingDates.checkIn).getTime()) / (1000 * 60 * 60 * 24))
-    : 0;
-  
+  const totalNights =
+    bookingDates.checkIn && bookingDates.checkOut
+      ? Math.ceil(
+          (new Date(bookingDates.checkOut).getTime() - new Date(bookingDates.checkIn).getTime()) /
+            (1000 * 60 * 60 * 24)
+        )
+      : 0;
+
   const subtotal = Number(property.base_price) * totalNights;
   const cleaningFee = Number(property.cleaning_fee) || 0;
   const serviceFee = Number(property.service_fee) || 0;
   const taxAmount = (subtotal + cleaningFee + serviceFee) * 0.16;
   const total = subtotal + cleaningFee + serviceFee + taxAmount;
 
-  // Get minimum date (today)
   const today = new Date().toISOString().split('T')[0];
+
+  const maxGuests = Number(property.max_guests) || 8;
+  const guestOptions = Array.from({ length: Math.min(maxGuests, 20) }, (_, i) => i + 1);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -440,56 +467,77 @@ if (allImages.length === 0) {
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-
-        {/* Image Gallery - Enhanced */}
-<div className="mb-8">
-  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 h-[400px]">
-    {/* Main Image */}
-    <div className="md:col-span-2 md:row-span-2 relative cursor-pointer" onClick={() => { setLightboxIndex(0); setShowLightbox(true); }}>
-      <img
-        src={allImages[0] || 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800'}
-        alt={property.title}
-        className="w-full h-full object-cover rounded-l-lg"
-      />
-      <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
-        {allImages.length} photo{allImages.length !== 1 ? 's' : ''}
-      </div>
-      {property.featured_image === allImages[0] && (
-        <div className="absolute top-4 left-4 bg-primary-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-          Featured
-        </div>
-      )}
-    </div>
-    {/* Thumbnail Images */}
-    <div className="grid grid-cols-2 gap-2 md:col-span-2">
-      {allImages.slice(1, 5).map((img, idx) => (
-        <div key={idx} className="relative cursor-pointer overflow-hidden rounded-tr-lg rounded-br-lg" onClick={() => { setLightboxIndex(idx + 1); setShowLightbox(true); }}>
-          <img
-            src={img}
-            alt={`${property.title} ${idx + 2}`}
-            className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
-          />
-          {idx === 3 && allImages.length > 5 && (
-            <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center text-white font-semibold text-lg">
-              +{allImages.length - 5} more
+        {/* Image Gallery */}
+        <div className="mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2 h-[400px]">
+            {/* Main Image */}
+            <div
+              className="md:col-span-2 md:row-span-2 relative cursor-pointer"
+              onClick={() => {
+                setLightboxIndex(0);
+                setShowLightbox(true);
+              }}
+            >
+              <img
+                src={allImages[0]}
+                alt={property.title}
+                className="w-full h-full object-cover rounded-l-lg"
+              />
+              <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
+                {allImages.length} photo{allImages.length !== 1 ? 's' : ''}
+              </div>
+              {property.featured_image === allImages[0] && (
+                <div className="absolute top-4 left-4 bg-primary-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                  Featured
+                </div>
+              )}
             </div>
-          )}
+
+            {/* Thumbnail Images */}
+            <div className="grid grid-cols-2 gap-2 md:col-span-2">
+              {allImages.slice(1, 5).map((img, idx) => (
+                <div
+                  key={idx}
+                  className="relative cursor-pointer overflow-hidden rounded-tr-lg rounded-br-lg"
+                  onClick={() => {
+                    setLightboxIndex(idx + 1);
+                    setShowLightbox(true);
+                  }}
+                >
+                  <img
+                    src={img}
+                    alt={`${property.title} ${idx + 2}`}
+                    className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+                  />
+                  {idx === 3 && allImages.length > 5 && (
+                    <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center text-white font-semibold text-lg">
+                      +{allImages.length - 5} more
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* View All Photos Button */}
+          <button
+            onClick={() => {
+              setLightboxIndex(0);
+              setShowLightbox(true);
+            }}
+            className="mt-4 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
+            </svg>
+            View all photos
+          </button>
         </div>
-      ))}
-    </div>
-  </div>
-  
-  {/* View All Photos Button */}
-  <button 
-    onClick={() => { setLightboxIndex(0); setShowLightbox(true); }}
-    className="mt-4 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
-  >
-    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-    </svg>
-    View all photos
-  </button>
-</div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Property Details */}
@@ -499,11 +547,12 @@ if (allImages.length === 0) {
               <p className="text-gray-600 mb-4">
                 {property.address}, {property.city}, {property.country}
               </p>
-              
+
               <div className="flex items-center gap-4 mb-6">
                 <span className="badge-info">{property.property_type}</span>
                 <span className="text-gray-600">
-                  {property.bedrooms} bedrooms • {property.bathrooms} bathrooms • Up to {property.max_guests} guests
+                  {property.bedrooms} bedrooms • {property.bathrooms} bathrooms • Up to{' '}
+                  {property.max_guests} guests
                 </span>
               </div>
 
@@ -517,17 +566,16 @@ if (allImages.length === 0) {
                   />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center">
-                    <span className="text-gray-600 font-bold">{property.host?.name?.charAt(0) || 'H'}</span>
+                    <span className="text-gray-600 font-bold">
+                      {property.host?.name?.charAt(0) || 'H'}
+                    </span>
                   </div>
                 )}
                 <div className="flex-1">
                   <p className="font-medium">Hosted by {property.host?.name || 'Host'}</p>
                   <p className="text-sm text-gray-500">{property.total_reviews || 0} reviews</p>
                 </div>
-                <button 
-                  onClick={() => setShowContactModal(true)}
-                  className="btn-outline text-sm"
-                >
+                <button onClick={() => setShowContactModal(true)} className="btn-outline text-sm">
                   Contact Host
                 </button>
               </div>
@@ -538,40 +586,37 @@ if (allImages.length === 0) {
                 <p className="text-gray-600">{property.description}</p>
               </div>
 
-             {/* Amenities */}
-            <div className="mb-6">
-              <h2 className="text-xl font-bold mb-3">What this place offers</h2>
-              <div className="grid grid-cols-2 gap-4">
-                {property.amenities && typeof property.amenities === 'object' 
-                  ? Object.entries(property.amenities)
-                      .filter(([_, v]) => v)
-                      .map(([key, _]) => (
-                        <div key={key} className="flex items-center gap-2">
-                          <span>✓</span>
-                          <span className="capitalize">{key.replace('_', ' ')}</span>
-                        </div>
-                      ))
-                  : null}
-              </div>
-            </div>
-
-              {/* Family Features */}
-            {property.family_features && typeof property.family_features === 'object' && 
-            Object.keys(property.family_features).length > 0 && (
+              {/* Amenities */}
               <div className="mb-6">
-                <h2 className="text-xl font-bold mb-3">Family-friendly features</h2>
-                <div className="grid grid-cols-2 gap-4">
-                  {Object.entries(property.family_features)
-                    .filter(([_, v]) => v)
-                    .map(([key, _]) => (
+                <h2 className="text-xl font-bold mb-3">What this place offers</h2>
+                {amenityEntries.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    {amenityEntries.map(([key]) => (
                       <div key={key} className="flex items-center gap-2">
-                        <span>👨‍👩‍👧‍👦</span>
-                        <span className="capitalize">{key.replace('_', ' ')}</span>
+                        <span>✓</span>
+                        <span className="capitalize">{key.replace(/_/g, ' ')}</span>
                       </div>
                     ))}
-                </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-sm">No amenities listed.</p>
+                )}
               </div>
-            )}
+
+              {/* Family Features */}
+              {familyEntries.length > 0 && (
+                <div className="mb-6">
+                  <h2 className="text-xl font-bold mb-3">Family-friendly features</h2>
+                  <div className="grid grid-cols-2 gap-4">
+                    {familyEntries.map(([key]) => (
+                      <div key={key} className="flex items-center gap-2">
+                        <span>👨‍👩‍👧‍👦</span>
+                        <span className="capitalize">{key.replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Reviews Section */}
               <div>
@@ -579,12 +624,14 @@ if (allImages.length === 0) {
                   Reviews ({property.total_reviews || 0})
                 </h2>
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="text-2xl font-bold">★ {property.average_rating?.toFixed(1) || '0.0'}</span>
+                  <span className="text-2xl font-bold">
+                    ★ {property.average_rating?.toFixed(1) || '0.0'}
+                  </span>
                   <span className="text-gray-500">rating</span>
                 </div>
                 <p className="text-gray-600">
-                  {property.total_reviews > 0 
-                    ? 'Reviews from guests who have stayed here.' 
+                  {(property.total_reviews || 0) > 0
+                    ? 'Reviews from guests who have stayed here.'
                     : 'No reviews yet. Be the first to review this property!'}
                 </p>
               </div>
@@ -600,14 +647,17 @@ if (allImages.length === 0) {
                   <span className="text-base font-normal text-gray-500">/night</span>
                 </span>
                 <span className="text-sm text-gray-500">
-                  ★ {property.average_rating?.toFixed(1) || '0.0'} ({property.total_reviews || 0} reviews)
+                  ★ {property.average_rating?.toFixed(1) || '0.0'} ({property.total_reviews || 0}{' '}
+                  reviews)
                 </span>
               </div>
 
               <div className="space-y-4 mb-4">
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Check-in</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Check-in
+                    </label>
                     <input
                       type="date"
                       className="input text-sm"
@@ -617,7 +667,9 @@ if (allImages.length === 0) {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-700 mb-1">Check-out</label>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Check-out
+                    </label>
                     <input
                       type="date"
                       className="input text-sm"
@@ -632,9 +684,11 @@ if (allImages.length === 0) {
                   <select
                     className="input text-sm"
                     value={bookingDates.guests}
-                    onChange={(e) => setBookingDates({ ...bookingDates, guests: parseInt(e.target.value) })}
+                    onChange={(e) =>
+                      setBookingDates({ ...bookingDates, guests: parseInt(e.target.value) })
+                    }
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((num) => (
+                    {guestOptions.map((num) => (
                       <option key={num} value={num}>
                         {num} {num === 1 ? 'guest' : 'guests'}
                       </option>
@@ -654,7 +708,9 @@ if (allImages.length === 0) {
               {totalNights > 0 && (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span>KES {Number(property.base_price).toLocaleString()} x {totalNights} nights</span>
+                    <span>
+                      KES {Number(property.base_price).toLocaleString()} x {totalNights} nights
+                    </span>
                     <span>KES {subtotal.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
@@ -695,10 +751,7 @@ if (allImages.length === 0) {
               onChange={(e) => setMessage(e.target.value)}
             />
             <div className="flex gap-2 mt-4">
-              <button
-                onClick={() => setShowContactModal(false)}
-                className="flex-1 btn-outline"
-              >
+              <button onClick={() => setShowContactModal(false)} className="flex-1 btn-outline">
                 Cancel
               </button>
               <button
@@ -716,52 +769,62 @@ if (allImages.length === 0) {
       {/* Lightbox Modal */}
       {showLightbox && (
         <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
-          <button 
+          <button
             onClick={() => setShowLightbox(false)}
             className="absolute top-4 right-4 text-white text-4xl hover:text-gray-300 z-50"
           >
             ×
           </button>
-          
+
           {/* Previous Button */}
-          <button 
-            onClick={() => setLightboxIndex((lightboxIndex - 1 + allImages.length) % allImages.length)}
+          <button
+            onClick={() =>
+              setLightboxIndex((lightboxIndex - 1 + allImages.length) % allImages.length)
+            }
             className="absolute left-4 text-white text-4xl hover:text-gray-300"
           >
             ‹
           </button>
-          
+
           {/* Main Image */}
           <div className="max-w-4xl max-h-[80vh]">
-            <img 
-              src={allImages[lightboxIndex]} 
+            <img
+              src={allImages[lightboxIndex]}
               alt={`${property.title} ${lightboxIndex + 1}`}
               className="max-w-full max-h-[80vh] object-contain"
             />
           </div>
-          
+
           {/* Next Button */}
-          <button 
+          <button
             onClick={() => setLightboxIndex((lightboxIndex + 1) % allImages.length)}
             className="absolute right-4 text-white text-4xl hover:text-gray-300"
           >
             ›
           </button>
-          
+
           {/* Image Counter */}
           <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 text-white bg-black bg-opacity-60 px-4 py-2 rounded">
             {lightboxIndex + 1} / {allImages.length}
           </div>
-          
+
           {/* Thumbnails */}
           <div className="absolute bottom-16 left-1/2 transform -translate-x-1/2 flex gap-2 max-w-full overflow-x-auto px-4">
             {allImages.map((img, idx) => (
-              <button 
+              <button
                 key={idx}
                 onClick={() => setLightboxIndex(idx)}
-                className={`w-16 h-16 flex-shrink-0 border-2 ${lightboxIndex === idx ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                className={`w-16 h-16 flex-shrink-0 border-2 ${
+                  lightboxIndex === idx
+                    ? 'border-white'
+                    : 'border-transparent opacity-70 hover:opacity-100'
+                }`}
               >
-                <img src={img} alt={`Thumbnail ${idx + 1}`} className="w-full h-full object-cover" />
+                <img
+                  src={img}
+                  alt={`Thumbnail ${idx + 1}`}
+                  className="w-full h-full object-cover"
+                />
               </button>
             ))}
           </div>
