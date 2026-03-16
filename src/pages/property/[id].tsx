@@ -87,20 +87,30 @@ export default function PropertyDetail() {
     }
   }, [id]);
 
-  const fetchProperty = async () => {
-    setLoading(true);
-    try {
-      const response = await propertiesApi.get(Number(id));
-      setProperty(response.data);
-    } catch (error) {
-      console.error('Error fetching property:', error);
-      toast.error('Property not found');
-      router.push('/search');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+ const fetchProperty = async () => {
+  setLoading(true);
+  try {
+    const response = await propertiesApi.get(Number(id));
+    console.log('🔍 FULL API RESPONSE:', response);
+    console.log('🔍 RESPONSE DATA:', response.data);
+    console.log('🔍 DATA TYPE:', typeof response.data);
+    console.log('🔍 IS ARRAY?', Array.isArray(response.data));
+    console.log('🔍 KEYS:', Object.keys(response.data));
+    
+    // Specifically check images
+    console.log('🔍 IMAGES FIELD:', response.data.images);
+    console.log('🔍 IMAGES TYPE:', typeof response.data.images);
+    console.log('🔍 IMAGES IS ARRAY?', Array.isArray(response.data.images));
+    
+    setProperty(response.data);
+  } catch (error) {
+    console.error('Error fetching property:', error);
+    toast.error('Property not found');
+    router.push('/search');
+  } finally {
+    setLoading(false);
+  }
+};
   const fetchAvailability = async () => {
     try {
       const startDate = new Date().toISOString().split('T')[0];
