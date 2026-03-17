@@ -27,6 +27,28 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Add response interceptor to fix image URLs
+api.interceptors.response.use(
+  (response) => {
+    // If the response has image URLs, ensure they're HTTPS
+    if (response.data && response.data.results) {
+      response.data.results = response.data.results.map((item: any) => {
+        if (item.featured_image) {
+          item.featured_image = item.featured_image.replace('http://', 'https://');
+        }
+        if (item.images) {
+          item.images = item.images.map((img: any) => ({
+            ...img,
+            image: img.image.replace('http://', 'https://')
+          }));
+        }
+        return item;
+      });
+    }
+    return response;
+  },
+  (error) => Promise.reject(error)
+);
 // Response interceptor to handle token refresh
 api.interceptors.response.use(
   (response) => response,

@@ -55,6 +55,8 @@ interface AvailabilityDate {
   is_booked: boolean;
 }
 
+const FALLBACK_IMAGE = 'https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800';
+
 // Helper: safely parse a field that might be a JSON string or already an object
 function safeParse(value: any): any {
   if (!value) return null;
@@ -77,13 +79,23 @@ function safeObjectEntries(value: any): [string, any][] {
   return Object.entries(parsed);
 }
 
-// Helper: safely get image URLs from images field
+// Helper: convert HTTP to HTTPS for ngrok URLs
+const getSecureImageUrl = (url: string): string => {
+  if (!url) return FALLBACK_IMAGE;
+  // Convert http to https for ngrok URLs
+  if (url.includes('ngrok-free.app')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+};
+
+// Helper: safely get image URLs from images field with HTTPS
 function safeImageUrls(images: any, featuredImage?: string): string[] {
   const result: string[] = [];
 
-  // Add featured image first
+  // Add featured image first - ensure HTTPS
   if (featuredImage) {
-    result.push(featuredImage);
+    result.push(getSecureImageUrl(featuredImage));
   }
 
   if (!images) return result;
@@ -93,13 +105,19 @@ function safeImageUrls(images: any, featuredImage?: string): string[] {
   if (Array.isArray(parsed)) {
     const others = parsed
       .filter((img: any) => img && !img.is_featured)
-      .map((img: any) => img.image || img)
+      .map((img: any) => {
+        const url = img.image || img;
+        return getSecureImageUrl(url);
+      })
       .filter((url: any) => typeof url === 'string' && url);
     result.push(...others);
   } else if (typeof parsed === 'object') {
     const others = Object.values(parsed)
       .filter((img: any) => img && !img.is_featured)
-      .map((img: any) => img.image || img)
+      .map((img: any) => {
+        const url = img.image || img;
+        return getSecureImageUrl(url);
+      })
       .filter((url: any) => typeof url === 'string' && url);
     result.push(...others);
   }
@@ -403,7 +421,7 @@ export default function PropertyDetail() {
   // Build image array safely using helpers
   const allImages = safeImageUrls(property.images, property.featured_image);
   if (allImages.length === 0) {
-    allImages.push('https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800');
+    allImages.push(FALLBACK_IMAGE);
   }
 
   // Safely parse amenities and family_features (handles JSON string, object, or bad data)
@@ -482,6 +500,9 @@ export default function PropertyDetail() {
                 src={allImages[0]}
                 alt={property.title}
                 className="w-full h-full object-cover rounded-l-lg"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                }}
               />
               <div className="absolute bottom-4 left-4 bg-black bg-opacity-60 text-white px-3 py-1 rounded text-sm">
                 {allImages.length} photo{allImages.length !== 1 ? 's' : ''}
@@ -508,6 +529,9 @@ export default function PropertyDetail() {
                     src={img}
                     alt={`${property.title} ${idx + 2}`}
                     className="w-full h-full object-cover hover:scale-110 transition-transform duration-300"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                    }}
                   />
                   {idx === 3 && allImages.length > 5 && (
                     <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center text-white font-semibold text-lg">
@@ -560,9 +584,12 @@ export default function PropertyDetail() {
               <div className="flex items-center gap-4 mb-6 pb-6 border-b">
                 {property.host?.profile_picture ? (
                   <img
-                    src={property.host.profile_picture}
+                    src={getSecureImageUrl(property.host.profile_picture)}
                     alt={property.host.name}
                     className="w-12 h-12 rounded-full"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                    }}
                   />
                 ) : (
                   <div className="w-12 h-12 rounded-full bg-gray-300 flex items-center justify-center">
@@ -792,6 +819,9 @@ export default function PropertyDetail() {
               src={allImages[lightboxIndex]}
               alt={`${property.title} ${lightboxIndex + 1}`}
               className="max-w-full max-h-[80vh] object-contain"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+              }}
             />
           </div>
 
@@ -824,6 +854,9 @@ export default function PropertyDetail() {
                   src={img}
                   alt={`Thumbnail ${idx + 1}`}
                   className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).src = FALLBACK_IMAGE;
+                  }}
                 />
               </button>
             ))}
