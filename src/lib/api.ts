@@ -2,7 +2,8 @@ import axios from 'axios';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://3262-38-226-202-130.ngrok-free.app/api' ;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const BASE_DOMAIN = API_BASE_URL.replace('/api', '');
+
 
 
 const api = axios.create({
@@ -11,7 +12,82 @@ const api = axios.create({
     'Content-Type': 'application/json',
     'ngrok-skip-browser-warning': 'true', 
   },
+  withCredentials: true,
 });
+
+const fixImageUrl = (url: string): string => {
+  if (!url) return '';
+  
+  // If it's already a full URL with http/https
+  if (url.startsWith('http')) {
+    // Replace localhost with ngrok domain
+    if (url.includes('localhost') || url.includes('127.0.0.1')) {
+      return url.replace(/https?:\/\/[^\/]+/, BASE_DOMAIN);
+    }
+    // Ensure HTTPS for ngrok
+    if (url.includes('ngrok-free.app')) {
+      return url.replace('http://', 'https://');
+    }
+    return url;
+  }
+  
+  // If it's a relative path starting with /media or /static
+  if (url.startsWith('/media') || url.startsWith('/static')) {
+    return `${BASE_DOMAIN}${url}`;
+  }
+  
+  // If it's a relative path without leading slash
+  if (url.startsWith('media') || url.startsWith('static')) {
+    return `${BASE_DOMAIN}/${url}`;
+  }
+  
+  return url;
+};
+
+// Response interceptor to fix all image URLs in responses
+api.interceptors.response.use(
+  (response) => {
+    // Recursively process all string values that look like image URLs
+    const processObject = (obj: any): any => {
+      if (!obj || typeof obj !== 'object') return obj;
+      
+      if (Array.isArray(obj)) {
+        return obj.map(item => processObject(item));
+      }
+      
+      const processed: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        if (typeof value === 'string') {
+          // Check if this string looks like an image URL
+          if (
+            value.includes('/media/') || 
+            value.includes('/static/') || 
+            value.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i) ||
+            key.includes('image') || 
+            key.includes('photo') || 
+            key.includes('picture') ||
+            key.includes('avatar') ||
+            key.includes('thumbnail')
+          ) {
+            processed[key] = fixImageUrl(value);
+          } else {
+            processed[key] = value;
+          }
+        } else if (typeof value === 'object' && value !== null) {
+          processed[key] = processObject(value);
+        } else {
+          processed[key] = value;
+        }
+      }
+      return processed;
+    };
+    
+    response.data = processObject(response.data);
+    return response;
+  },
+  (error) => Promise.reject(error)
+);
+
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
@@ -61,7 +137,7 @@ api.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
-          const response = await axios.post(`${API_URL}/auth/token/refresh/`, {
+          const response = await axios.post(`${API_BASE_URL}/auth/token/refresh/`, {
             refresh: refreshToken,
           });
           
@@ -121,7 +197,7 @@ export const bookingsApi = {
   create: (data: any) => {
     const token = localStorage.getItem('access_token');
     return axios.post(
-      `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api'}/bookings/create/`,
+      `${process.env.NEXT_PUBLIC_API_URL || 'https://3262-38-226-202-130.ngrok-free.app/api'}/bookings/create/`,
       data,
       {
         headers: {

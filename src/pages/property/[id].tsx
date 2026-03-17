@@ -79,23 +79,22 @@ function safeObjectEntries(value: any): [string, any][] {
   return Object.entries(parsed);
 }
 
-// Helper: convert HTTP to HTTPS for ngrok URLs
-const getSecureImageUrl = (url: string): string => {
-  if (!url) return FALLBACK_IMAGE;
-  // Convert http to https for ngrok URLs
-  if (url.includes('ngrok-free.app')) {
-    return url.replace('http://', 'https://');
-  }
-  return url;
-};
-
-// Helper: safely get image URLs from images field with HTTPS
+// Helper: safely get image URLs with HTTPS conversion
 function safeImageUrls(images: any, featuredImage?: string): string[] {
   const result: string[] = [];
 
+  // Helper to convert HTTP to HTTPS for ngrok
+  const toHttps = (url: string): string => {
+    if (!url) return url;
+    if (url.includes('ngrok-free.app') && url.startsWith('http://')) {
+      return url.replace('http://', 'https://');
+    }
+    return url;
+  };
+
   // Add featured image first - ensure HTTPS
   if (featuredImage) {
-    result.push(getSecureImageUrl(featuredImage));
+    result.push(toHttps(featuredImage));
   }
 
   if (!images) return result;
@@ -107,7 +106,7 @@ function safeImageUrls(images: any, featuredImage?: string): string[] {
       .filter((img: any) => img && !img.is_featured)
       .map((img: any) => {
         const url = img.image || img;
-        return getSecureImageUrl(url);
+        return toHttps(url);
       })
       .filter((url: any) => typeof url === 'string' && url);
     result.push(...others);
@@ -116,14 +115,24 @@ function safeImageUrls(images: any, featuredImage?: string): string[] {
       .filter((img: any) => img && !img.is_featured)
       .map((img: any) => {
         const url = img.image || img;
-        return getSecureImageUrl(url);
+        return toHttps(url);
       })
       .filter((url: any) => typeof url === 'string' && url);
     result.push(...others);
   }
 
-  return result;
+  // Remove duplicates
+  return [...new Set(result)];
 }
+
+// Helper for host image
+const getSecureImageUrl = (url: string): string => {
+  if (!url) return FALLBACK_IMAGE;
+  if (url.includes('ngrok-free.app') && url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+};
 
 export default function PropertyDetail() {
   const router = useRouter();
