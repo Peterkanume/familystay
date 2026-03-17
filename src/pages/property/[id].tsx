@@ -111,33 +111,26 @@ export default function PropertyDetail() {
     }
   }, [id]);
 
-  const fetchProperty = async () => {
-    setLoading(true);
-    try {
-      const response = await propertiesApi.get(Number(id));
-      console.log('🔍 FULL API RESPONSE:', response);
-      console.log('🔍 RESPONSE DATA:', response.data);
-      console.log('🔍 DATA TYPE:', typeof response.data);
-      console.log('🔍 IS ARRAY?', Array.isArray(response.data));
-      console.log('🔍 KEYS:', Object.keys(response.data));
-
-      // Debug images and amenities shapes
-      console.log('🔍 IMAGES FIELD:', response.data.images);
-      console.log('🔍 IMAGES TYPE:', typeof response.data.images);
-      console.log('🔍 IMAGES IS ARRAY?', Array.isArray(response.data.images));
-      console.log('🔍 AMENITIES TYPE:', typeof response.data.amenities, response.data.amenities);
-      console.log('🔍 FAMILY_FEATURES TYPE:', typeof response.data.family_features, response.data.family_features);
-
-      setProperty(response.data);
-    } catch (error) {
-      console.error('Error fetching property:', error);
-      toast.error('Property not found');
-      router.push('/search');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+ const fetchProperty = async () => {
+  setLoading(true);
+  try {
+    const response = await propertiesApi.get(Number(id));
+    console.log('🔍 FULL API RESPONSE:', response);
+    console.log('🔍 RESPONSE DATA:', response.data);
+    
+    // Specifically log image URLs
+    console.log('🔍 FEATURED IMAGE:', response.data.featured_image);
+    console.log('🔍 IMAGES ARRAY:', response.data.images);
+    
+    setProperty(response.data);
+  } catch (error) {
+    console.error('Error fetching property:', error);
+    toast.error('Property not found');
+    router.push('/search');
+  } finally {
+    setLoading(false);
+  }
+};
   const fetchAvailability = async () => {
     try {
       const startDate = new Date().toISOString().split('T')[0];
@@ -379,17 +372,24 @@ export default function PropertyDetail() {
   // Add featured image if it exists
   if (property.featured_image) {
     allImages.push(property.featured_image);
+    console.log('🔍 Added featured image:', property.featured_image);
   }
 
   // Add other images if they exist and are in array format
   if (property.images && Array.isArray(property.images)) {
+    console.log('🔍 Raw images array:', property.images);
     const otherImages = property.images
       .filter(img => img && !img.is_featured)
-      .map(img => img.image)
-      .filter(url => url); // Remove empty URLs
-    allImages.push(...otherImages);
-  }
+      .map(img => {
+      console.log('🔍 Processing image:', img);
+      return img.image;
+    })
+    .filter(url => url);
+  console.log('🔍 Other images after processing:', otherImages);
+  allImages.push(...otherImages);
+}
 
+console.log('🔍 Final allImages array:', allImages);
   // If still no images, use fallback
   if (allImages.length === 0) {
     allImages.push(FALLBACK_IMAGE);

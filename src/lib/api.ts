@@ -16,37 +16,50 @@ const api = axios.create({
 });
 
 const fixImageUrl = (url: string): string => {
-  if (!url) return '';
+  if (!url || typeof url !== 'string') return '';
+
+  console.log('🔧 Fixing URL:', url);
   
-  // If it's already a full URL with http/https
+   // If it's already a full URL with http/https
   if (url.startsWith('http')) {
     // Replace localhost with ngrok domain
     if (url.includes('localhost') || url.includes('127.0.0.1')) {
-      return url.replace(/https?:\/\/[^\/]+/, BASE_DOMAIN);
+      const fixed = url.replace(/https?:\/\/[^\/]+/, BASE_DOMAIN);
+      console.log('🔧 Replaced localhost with:', fixed);
+      return fixed;
     }
     // Ensure HTTPS for ngrok
-    if (url.includes('ngrok-free.app')) {
-      return url.replace('http://', 'https://');
+    if (url.includes('ngrok-free.app') && url.startsWith('http://')) {
+      const fixed = url.replace('http://', 'https://');
+      console.log('🔧 Converted HTTP to HTTPS:', fixed);
+      return fixed;
     }
     return url;
   }
   
   // If it's a relative path starting with /media or /static
   if (url.startsWith('/media') || url.startsWith('/static')) {
-    return `${BASE_DOMAIN}${url}`;
+    const fixed = `${BASE_DOMAIN}${url}`;
+    console.log('🔧 Fixed relative path:', fixed);
+    return fixed;
   }
   
   // If it's a relative path without leading slash
   if (url.startsWith('media') || url.startsWith('static')) {
-    return `${BASE_DOMAIN}/${url}`;
+    const fixed = `${BASE_DOMAIN}/${url}`;
+    console.log('🔧 Fixed relative path (no slash):', fixed);
+    return fixed;
   }
   
+  console.log('🔧 No changes needed:', url);
   return url;
 };
 
 // Response interceptor to fix all image URLs in responses
 api.interceptors.response.use(
   (response) => {
+    console.log('🔧 Interceptor running for:', response.config.url);
+    
     // Recursively process all string values that look like image URLs
     const processObject = (obj: any): any => {
       if (!obj || typeof obj !== 'object') return obj;
@@ -63,11 +76,12 @@ api.interceptors.response.use(
             value.includes('/media/') || 
             value.includes('/static/') || 
             value.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i) ||
-            key.includes('image') || 
-            key.includes('photo') || 
-            key.includes('picture') ||
-            key.includes('avatar') ||
-            key.includes('thumbnail')
+            key.toLowerCase().includes('image') || 
+            key.toLowerCase().includes('photo') || 
+            key.toLowerCase().includes('picture') ||
+            key.toLowerCase().includes('avatar') ||
+            key.toLowerCase().includes('thumbnail') ||
+            key.toLowerCase().includes('featured')
           ) {
             processed[key] = fixImageUrl(value);
           } else {
