@@ -79,61 +79,6 @@ function safeObjectEntries(value: any): [string, any][] {
   return Object.entries(parsed);
 }
 
-// Helper: safely get image URLs with HTTPS conversion
-function safeImageUrls(images: any, featuredImage?: string): string[] {
-  const result: string[] = [];
-
-  // Helper to convert HTTP to HTTPS for ngrok
-  const toHttps = (url: string): string => {
-    if (!url) return url;
-    if (url.includes('ngrok-free.app') && url.startsWith('http://')) {
-      return url.replace('http://', 'https://');
-    }
-    return url;
-  };
-
-  // Add featured image first - ensure HTTPS
-  if (featuredImage) {
-    result.push(toHttps(featuredImage));
-  }
-
-  if (!images) return result;
-
-  const parsed = safeParse(images);
-
-  if (Array.isArray(parsed)) {
-    const others = parsed
-      .filter((img: any) => img && !img.is_featured)
-      .map((img: any) => {
-        const url = img.image || img;
-        return toHttps(url);
-      })
-      .filter((url: any) => typeof url === 'string' && url);
-    result.push(...others);
-  } else if (typeof parsed === 'object') {
-    const others = Object.values(parsed)
-      .filter((img: any) => img && !img.is_featured)
-      .map((img: any) => {
-        const url = img.image || img;
-        return toHttps(url);
-      })
-      .filter((url: any) => typeof url === 'string' && url);
-    result.push(...others);
-  }
-
-  // Remove duplicates
-  return [...new Set(result)];
-}
-
-// Helper for host image
-const getSecureImageUrl = (url: string): string => {
-  if (!url) return FALLBACK_IMAGE;
-  if (url.includes('ngrok-free.app') && url.startsWith('http://')) {
-    return url.replace('http://', 'https://');
-  }
-  return url;
-};
-
 export default function PropertyDetail() {
   const router = useRouter();
   const { id } = router.query;
@@ -427,8 +372,25 @@ export default function PropertyDetail() {
     );
   }
 
-  // Build image array safely using helpers
-  const allImages = safeImageUrls(property.images, property.featured_image);
+  // SIMPLIFIED: Build image array directly from API data
+  // The API interceptor already handles HTTPS conversion
+  const allImages: string[] = [];
+
+  // Add featured image if it exists
+  if (property.featured_image) {
+    allImages.push(property.featured_image);
+  }
+
+  // Add other images if they exist and are in array format
+  if (property.images && Array.isArray(property.images)) {
+    const otherImages = property.images
+      .filter(img => img && !img.is_featured)
+      .map(img => img.image)
+      .filter(url => url); // Remove empty URLs
+    allImages.push(...otherImages);
+  }
+
+  // If still no images, use fallback
   if (allImages.length === 0) {
     allImages.push(FALLBACK_IMAGE);
   }
@@ -593,7 +555,7 @@ export default function PropertyDetail() {
               <div className="flex items-center gap-4 mb-6 pb-6 border-b">
                 {property.host?.profile_picture ? (
                   <img
-                    src={getSecureImageUrl(property.host.profile_picture)}
+                    src={property.host.profile_picture}
                     alt={property.host.name}
                     className="w-12 h-12 rounded-full"
                     onError={(e) => {
