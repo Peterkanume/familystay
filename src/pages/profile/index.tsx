@@ -218,7 +218,7 @@ export default function Profile() {
                 <h3 className="font-medium">Notification Settings</h3>
                 <p className="text-sm text-gray-500">Manage email notifications</p>
               </div>
-              <Link href="/settings/notifications" className="btn-outline">Manage</Link>
+              <Link href="notifications" className="btn-outline">Manage</Link>
             </div>
             <div className="flex justify-between items-center py-3">
               <div>
