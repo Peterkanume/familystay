@@ -1,11 +1,50 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { bookingsApi } from '@/lib/api';
+
+interface User {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string;
+  phone_number?: string;
+  profile_picture?: string;
+}
+
+interface Booking {
+  id: number;
+  booking_reference: string;
+  listing?: {
+    id: number;
+    title: string;
+    featured_image: string;
+    city: string;
+    country: string;
+  };
+  property?: {
+    id: number;
+    title: string;
+    featured_image: string;
+    city: string;
+    country: string;
+  };
+  check_in_date: string;
+  check_out_date: string;
+  number_of_guests: number;
+  total_amount: number;
+  booking_status: string;
+  payment_status: string;
+}
 
 export default function Dashboard() {
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recentBookings, setRecentBookings] = useState<Booking[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
 
   useEffect(() => {
     // Check if user is logged in
@@ -15,10 +54,29 @@ export default function Dashboard() {
       return;
     }
 
-    // Get user data from localStorage (in real app, fetch from API)
+    // Get user data from localStorage
     const userData = localStorage.getItem('user');
     if (userData) {
-      setUser(JSON.parse(userData));
+      try {
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        
+        // Fetch recent bookings if user is a guest
+        if (parsedUser.role === 'GUEST' || !parsedUser.role) {
+          fetchRecentBookings();
+        }
+      } catch (e) {
+        console.error('Error parsing user data:', e);
+        // Fallback to demo user
+        setUser({
+          id: 1,
+          username: 'demo_user',
+          first_name: 'Demo',
+          last_name: 'User',
+          email: 'demo@familystay.co.ke',
+          role: 'GUEST',
+        });
+      }
     } else {
       // Demo user for testing
       setUser({
@@ -29,9 +87,36 @@ export default function Dashboard() {
         email: 'demo@familystay.co.ke',
         role: 'GUEST',
       });
+      fetchRecentBookings();
     }
     setLoading(false);
   }, [router]);
+
+  const fetchRecentBookings = async () => {
+    setLoadingBookings(true);
+    try {
+      const response = await bookingsApi.list();
+      // Get the bookings array from response
+      const bookings = response.data.results || response.data || [];
+      // Sort by check-in date and get recent ones
+      const sorted = Array.isArray(bookings) 
+        ? [...bookings].sort((a, b) => new Date(b.check_in_date).getTime() - new Date(a.check_in_date).getTime())
+        : [];
+      setRecentBookings(sorted.slice(0, 3));
+    } catch (error) {
+      console.error('Error fetching bookings:', error);
+      setRecentBookings([]);
+    } finally {
+      setLoadingBookings(false);
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    router.push('/');
+  };
 
   if (loading) {
     return (
@@ -43,6 +128,34 @@ export default function Dashboard() {
 
   const isGuest = user?.role === 'GUEST' || !user?.role;
   const isHost = user?.role === 'HOST';
+
+  // Helper to get property title
+  const getPropertyTitle = (booking: Booking) => {
+    return booking.listing?.title || booking.property?.title || 'Property';
+  };
+
+  // Helper to get property location
+  const getPropertyLocation = (booking: Booking) => {
+    const city = booking.listing?.city || booking.property?.city || 'Location';
+    const country = booking.listing?.country || booking.property?.country || 'Kenya';
+    return `${city}, ${country}`;
+  };
+
+  // Helper to get status badge class
+  const getStatusBadgeClass = (status: string) => {
+    switch (status) {
+      case 'CONFIRMED':
+        return 'bg-green-100 text-green-800';
+      case 'PENDING':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'CANCELLED':
+        return 'bg-red-100 text-red-800';
+      case 'COMPLETED':
+        return 'bg-blue-100 text-blue-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -62,23 +175,21 @@ export default function Dashboard() {
                   Host Dashboard
                 </Link>
               )}
+              <Link href="/change-password" className="text-gray-600 hover:text-primary-500">
+                Change Password
+              </Link>
             </nav>
             <div className="flex items-center space-x-4">
               <div className="relative">
                 <button className="flex items-center space-x-2 text-gray-600 hover:text-primary-500">
                   <div className="w-8 h-8 bg-primary-500 rounded-full flex items-center justify-center text-white">
-                    {user?.first_name?.[0] || 'U'}
+                    {user?.first_name?.[0] || user?.username?.[0] || 'U'}
                   </div>
-                  <span>{user?.first_name || 'User'}</span>
+                  <span>{user?.first_name || user?.username || 'User'}</span>
                 </button>
               </div>
               <button
-                onClick={() => {
-                  localStorage.removeItem('access_token');
-                  localStorage.removeItem('refresh_token');
-                  localStorage.removeItem('user');
-                  router.push('/');
-                }}
+                onClick={handleLogout}
                 className="text-gray-600 hover:text-primary-500"
               >
                 Log out
@@ -92,7 +203,7 @@ export default function Dashboard() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back, {user?.first_name || 'User'}!
+            Welcome back, {user?.first_name || user?.username || 'User'}!
           </h1>
           <p className="text-gray-600 mt-2">
             {isHost 
@@ -186,58 +297,80 @@ export default function Dashboard() {
                 {isHost ? 'Recent Booking Activity' : 'Recent Bookings'}
               </h2>
               
-              {/* Sample booking cards */}
-              <div className="space-y-4">
-                {isGuest ? (
-                  // Guest view - sample upcoming bookings
-                  <>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold">Cozy Family Villa with Garden</h3>
-                          <p className="text-sm text-gray-600">Nairobi, Kenya</p>
-                          <p className="text-sm text-gray-500 mt-2">Dec 20 - Dec 25, 2024</p>
+              {loadingBookings ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {isGuest ? (
+                    // Real guest bookings from API
+                    <>
+                      {recentBookings.length > 0 ? (
+                        recentBookings.slice(0, 3).map(booking => (
+                          <div key={booking.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <h3 className="font-semibold">{getPropertyTitle(booking)}</h3>
+                                <p className="text-sm text-gray-600">{getPropertyLocation(booking)}</p>
+                                <p className="text-sm text-gray-500 mt-2">
+                                  {new Date(booking.check_in_date).toLocaleDateString()} - {new Date(booking.check_out_date).toLocaleDateString()}
+                                </p>
+                                <p className="text-sm text-gray-600 mt-1">KES {Number(booking.total_amount).toLocaleString()}</p>
+                              </div>
+                              <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeClass(booking.booking_status)}`}>
+                                {booking.booking_status}
+                              </span>
+                            </div>
+                            <div className="mt-3">
+                              <Link 
+                                href={`/bookings/${booking.id}`}
+                                className="text-sm text-primary-500 hover:text-primary-600"
+                              >
+                                View Details →
+                              </Link>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <div className="text-4xl mb-2">📅</div>
+                          <p>No upcoming bookings</p>
+                          <p className="text-sm">Book your first family stay!</p>
                         </div>
-                        <span className="badge-success">Confirmed</span>
-                      </div>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold">Beachfront Cottage in Diani</h3>
-                          <p className="text-sm text-gray-600">Mombasa, Kenya</p>
-                          <p className="text-sm text-gray-500 mt-2">Jan 10 - Jan 15, 2025</p>
+                      )}
+                    </>
+                  ) : (
+                    // Host view - sample property bookings
+                    <>
+                      <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-semibold">Modern Apartment - Booking #FAM-2024-00012</h3>
+                            <p className="text-sm text-gray-600">Guest: John Smith</p>
+                            <p className="text-sm text-gray-500 mt-2">Dec 20 - Dec 25, 2024 • KES 75,000</p>
+                          </div>
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                            Confirmed
+                          </span>
                         </div>
-                        <span className="badge-warning">Pending</span>
                       </div>
-                    </div>
-                  </>
-                ) : (
-                  // Host view - sample property bookings
-                  <>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold">Modern Apartment - Booking #FAM-2024-00012</h3>
-                          <p className="text-sm text-gray-600">Guest: John Smith</p>
-                          <p className="text-sm text-gray-500 mt-2">Dec 20 - Dec 25, 2024 • KES 75,000</p>
+                      <div className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="font-semibold">Luxury Villa - Booking #FAM-2024-00011</h3>
+                            <p className="text-sm text-gray-600">Guest: Sarah Johnson</p>
+                            <p className="text-sm text-gray-500 mt-2">Dec 15 - Dec 18, 2024 • KES 45,000</p>
+                          </div>
+                          <span className="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                            New Request
+                          </span>
                         </div>
-                        <span className="badge-success">Confirmed</span>
                       </div>
-                    </div>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="font-semibold">Luxury Villa - Booking #FAM-2024-00011</h3>
-                          <p className="text-sm text-gray-600">Guest: Sarah Johnson</p>
-                          <p className="text-sm text-gray-500 mt-2">Dec 15 - Dec 18, 2024 • KES 45,000</p>
-                        </div>
-                        <span className="badge-info">New Request</span>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
+                    </>
+                  )}
+                </div>
+              )}
 
               <Link 
                 href={isHost ? "/host/bookings" : "/bookings"}
@@ -256,7 +389,7 @@ export default function Dashboard() {
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Email</span>
-                  <span className="text-gray-900">{user?.email || 'demo@familystay.co.ke'}</span>
+                  <span className="text-gray-900 break-all text-sm">{user?.email || 'demo@familystay.co.ke'}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-600">Role</span>
@@ -272,6 +405,12 @@ export default function Dashboard() {
                 className="block mt-4 text-center btn-outline"
               >
                 Edit Profile
+              </Link>
+              <Link 
+                href="/change-password"
+                className="block mt-2 text-center text-sm text-primary-500 hover:text-primary-600"
+              >
+                Change Password →
               </Link>
             </div>
 
@@ -310,4 +449,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
